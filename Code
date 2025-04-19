@@ -1,0 +1,55 @@
+!pip install transformers datasets evaluate -q
+!pip install -U transformers datasets evaluate -q
+
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer
+from datasets import load_dataset
+from transformers import TrainingArguments
+import evaluate
+import numpy as np
+import torch
+
+accuracy = evaluate.load("accuracy")
+
+models_to_compare = ["bert-base-uncased", "roberta-base"]
+
+for model_name in models_to_compare:
+    print(f"\n🚀 Fine-tuning {model_name}...\n")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenized_train = train_dataset.map(tokenize, batched=True)
+    tokenized_test = test_dataset.map(tokenize, batched=True)
+
+    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+
+    # Removed 'evaluation_strategy' and used 'eval_steps' instead.
+    # Set it to a reasonable value for evaluation frequency during training.
+    training_args = TrainingArguments(
+        output_dir=f"./results/{model_name.replace('/', '_')}",
+        # evaluation_strategy="epoch",
+        eval_steps = 500, # Evaluate every 500 steps. Adjust as needed.
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=8,
+        num_train_epochs=1,
+        save_strategy="no",
+        logging_dir=f"./logs/{model_name.replace('/', '_')}",
+        logging_strategy="steps",
+        logging_steps=100,
+        report_to="none"
+    )
+
+    def compute_metrics(eval_pred):
+        logits, labels = eval_pred
+        predictions = np.argmax(logits, axis=-1)
+        return accuracy.compute(predictions=predictions, references=labels)
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_test,
+        compute_metrics=compute_metrics
+    )
+
+    trainer.train()
+    eval_result = trainer.evaluate()
+    print(f"📊 Accuracy for {model_name}: {eval_result['eval_accuracy']:.4f}")
